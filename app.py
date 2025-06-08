@@ -6,21 +6,21 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 
-# ==== CONFIGURACIÓN DE PÁGINA ====
+# ========== CONFIGURACIÓN ==========
 st.set_page_config(layout="wide")
 st.markdown("""
 <style>
-  body { background-color: #121212; color: #E0E0E0; }
-  .stTextInput input, .stSelectbox div, .stMultiSelect div {
+body { background-color: #121212; color: #E0E0E0; }
+.stTextInput input, .stSelectbox div, .stMultiSelect div {
     background-color:#333 !important; color:#E0E0E0 !important;
-  }
-  .stButton>button, .stFileUploader>div {
+}
+.stButton>button, .stFileUploader>div {
     background-color:#222; color:#E0E0E0;
-  }
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ==== FUNCIONES ====
+# ========== FUNCIONES ==========
 def extract_features(image_path):
     image = Image.open(image_path).resize((128, 128))
     image = np.array(image)
@@ -51,22 +51,18 @@ def display_posters(df, posters_df, cols_per_row=5):
         with cols[i % cols_per_row]:
             st.image(poster_url, width=150, caption=caption)
 
-# ==== CARGA DE DATOS ====
+# ========== CARGA LOCAL DE ARCHIVOS ==========
 st.sidebar.title("🎬 Filtros")
 
-features_url = "https://drive.google.com/uc?id=1aJuIr-VvA4FLJtaO4m_6EUso2PYKi-_9"
-metadata_url = "https://drive.google.com/uc?id=1cWSpBX1Gu_c84SElQzQOrsyfWkTfayM0"
-posters_url = "https://drive.google.com/uc?id=1uQ-K97yzrXsqF2sxRUz3j1TGxnMN2Fw6"
-
 try:
-    df_features = pd.read_csv(features_url)
-    df_metadata = pd.read_csv(metadata_url, encoding='ISO-8859-1')
-    df_posters = pd.read_csv(posters_url)
+    df_features = pd.read_csv("features.csv")
+    df_metadata = pd.read_csv("MovieGenre.csv", encoding='ISO-8859-1')
+    df_posters = pd.read_csv("posters_clean.csv")
 except Exception as e:
     st.error(f"❌ Error cargando archivos CSV: {e}")
     st.stop()
 
-# ==== PROCESAMIENTO Y VALIDACIÓN ====
+# ========== PROCESAMIENTO ==========
 try:
     df = pd.merge(df_features, df_metadata, left_on='tmdbId', right_on='imdbId')
     df['year'] = df['Title'].str.extract(r'\((\d{4})\)')
@@ -81,11 +77,11 @@ try:
     genres = sorted(df['Genre'].dropna().unique())
     years = sorted(df['year'].dropna().unique())
 except Exception as e:
-    st.error(f"❌ Error procesando los datos: {e}")
+    st.error(f"❌ Error procesando datos: {e}")
     st.stop()
 
-# ==== INTERFAZ PRINCIPAL ====
-st.markdown("# 🎥 Buscador de Películas")
+# ========== INTERFAZ PRINCIPAL ==========
+st.markdown("# 🎥 Buscador Visual de Películas")
 st.markdown("### 📤 Sube un póster o escribe un nombre para buscar")
 
 search_title = st.text_input("🔎 Buscar por nombre")
@@ -96,7 +92,6 @@ if uploaded_image:
     idxs = find_similar_movies(uploaded_image, numeric)
     st.subheader("Películas similares:")
     display_posters(df.iloc[idxs], df_posters)
-
 elif search_title.strip():
     result = df[df['Title'].str.lower().str.contains(search_title.lower())]
     if not result.empty:
@@ -105,7 +100,7 @@ elif search_title.strip():
     else:
         st.warning("No se encontraron coincidencias.")
 
-# ==== FILTROS ====
+# ========== FILTROS ==========
 st.markdown("---")
 st.subheader("🎞️ Películas por género y año")
 
