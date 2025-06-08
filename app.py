@@ -31,10 +31,10 @@ def extract_features(image_path):
     b = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
     return np.concatenate([r, g, b])
 
-def find_similar_movies(image_path, features_data):
+def find_similar_movies(image_path, features_data, top_n=8):
     query_features = extract_features(image_path)
     similarity = cosine_similarity([query_features], features_data)[0]
-    return np.argsort(similarity)[-5:][::-1]
+    return np.argsort(similarity)[-top_n:][::-1]
 
 def is_valid_image_path(path):
     return isinstance(path, str) and path.startswith("http") and "placeholder" not in path and path != "0"
@@ -102,14 +102,16 @@ search_title = st.text_input("🔎 Buscar por nombre")
 uploaded_image = st.file_uploader("O sube un póster", type=["jpg", "png", "jpeg"])
 
 if uploaded_image:
-    st.image(uploaded_image, caption="Póster subido", width=200)
-    idxs = find_similar_movies(uploaded_image, numeric)
-    st.subheader("Películas similares:")
-    display_posters(df.iloc[idxs], df_posters_clean)
+    st.image(uploaded_image, caption="📌 Póster subido", width=200)
+    idxs = find_similar_movies(uploaded_image, numeric, top_n=8)
+    resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
+    st.subheader("🎯 Recomendaciones basadas en el póster")
+    display_posters(resultados, df_posters_clean)
+
 elif search_title.strip():
     result = df[df['Title'].str.lower().str.contains(search_title.lower())]
     if not result.empty:
-        st.subheader(f"Resultados para: {search_title}")
+        st.subheader(f"🔍 Resultados para: {search_title}")
         display_posters(result.drop_duplicates('tmdbId'), df_posters_clean)
     else:
         st.warning("No se encontraron coincidencias.")
