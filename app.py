@@ -34,7 +34,7 @@ st.markdown("""
 # ========== Carga de datos ==========
 @st.cache_data
 def load_data():
-    features = pd.read_csv("final_movies_with_posters.csv")
+    features = pd.read_csv("final_movies_with_posters.csv", encoding='utf-8')
     clean_posters = pd.read_csv("posters_clean.csv")
     features.columns = features.columns.str.strip().str.lower()  # Normalizar nombres
     clean_posters.columns = clean_posters.columns.str.strip().str.lower()
