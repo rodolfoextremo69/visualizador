@@ -51,11 +51,9 @@ def display_posters(df, posters_df, cols_per_row=5):
         with cols[i % cols_per_row]:
             st.image(poster_url, width=150, caption=caption)
 
-# ========== CARGA LOCAL DE ARCHIVOS ==========
-st.sidebar.title("🎬 Filtros")
-
+## === CARGA DE ARCHIVOS ===
 try:
-    df_features = pd.read_csv("features.csv")
+    df_features = pd.read_csv("final_movies_with_posters.csv")  # <--- este es tu features.csv
     df_metadata = pd.read_csv("MovieGenre.csv", encoding='ISO-8859-1')
     df_posters = pd.read_csv("posters_clean.csv")
 except Exception as e:
