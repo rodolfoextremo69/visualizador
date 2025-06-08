@@ -1,140 +1,143 @@
 import streamlit as st
 import pandas as pd
+from PIL import Image
 import numpy as np
-import os
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
-from PIL import Image
+import os
+import requests
 
+# =================== CONFIGURACIÓN =====================
 st.set_page_config(layout="wide")
-
 st.markdown("""
-<style>
-    body {
-        background-color: #173759;
-        color: #f0f0f0;
-    }
-    .stApp {
-        background-color: #173759;
-    }
-    .css-1v0mbdj, .css-10trblm, .css-1d391kg, .stTextInput, .stSelectbox, .stMultiSelect, .stFileUploader {
-        color: #f0f0f0 !important;
-    }
-    .stSelectbox div[role=combobox], .stTextInput input {
-        color: #f0f0f0 !important;
-        background-color: #222 !important;
-    }
-    .st-bx, .st-c6, .st-cg {
-        background-color: #173759;
-    }
-</style>
+    <style>
+        body {
+            background-color: #121212;
+            color: white;
+        }
+        .stTextInput, .stSelectbox, .stFileUploader {
+            background-color: #333 !important;
+            color: white !important;
+        }
+        .css-1d391kg, .css-18e3th9 {
+            background-color: #111;
+        }
+        .st-bx, .st-c6, .st-cg {
+            background-color: #111;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
-# ========== Carga de datos ==========
-@st.cache_data
-def load_data():
-    features = pd.read_csv("final_movies_with_posters.csv", encoding='utf-8')
-    clean_posters = pd.read_csv("posters_clean.csv")
-    features.columns = features.columns.str.strip().str.lower()  # Normalizar nombres
-    clean_posters.columns = clean_posters.columns.str.strip().str.lower()
-    return features, clean_posters
+st.markdown("""
+    <style>
+        body, .css-1v0mbdj, .css-10trblm, .css-1d391kg {
+            color: white !important;
+        }
+        .stTextInput > div > input, .stSelectbox > div > div, .stMultiSelect > div {
+            background-color: #222 !important;
+            color: white !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-features, clean_posters = load_data()
+# ===================== FUNCIONES =========================
+def extract_features(image_path):
+    image = Image.open(image_path).resize((128, 128))
+    image = np.array(image)
+    r = np.histogram(image[:, :, 0], bins=256, range=(0, 255))[0]
+    g = np.histogram(image[:, :, 1], bins=256, range=(0, 255))[0]
+    b = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
+    return np.concatenate([r, g, b])
 
-if 'title' not in features.columns or 'poster' not in features.columns:
-    st.error("❌ El archivo no contiene columnas 'title' o 'poster'")
-    st.stop()
+def find_similar_movies(image_path, features_data):
+    query_features = extract_features(image_path)
+    similarity = cosine_similarity([query_features], features_data)[0]
+    return np.argsort(similarity)[-5:][::-1]
 
-# Eliminar columnas duplicadas
-features = features.loc[:, ~features.columns.duplicated()]
+def is_valid_image_path(path):
+    return isinstance(path, str) and path.startswith("http")
 
-# Añadir columnas derivadas
-features['year'] = features['title'].str.extract(r'\((\d{4})\)')
-features['genre'] = features['genre'].str.split('|')
-features = features.explode('genre')
+def get_backup_poster(title):
+    title_clean = title.lower().strip()
+    matches = df_posters_clean[df_posters_clean["title"].str.lower().str.strip() == title_clean]
+    if not matches.empty:
+        return matches.iloc[0]["poster_path"]
+    return None
 
-# Arreglo de imágenes que faltan
-def resolve_poster_url(title):
-    row = clean_posters[clean_posters['title'] == title]
-    if not row.empty:
-        return row.iloc[0]['poster']
-    return "https://via.placeholder.com/150x220?text=No+Image"
+def display_posters(df, cols_per_row=5):
+    cols = st.columns(cols_per_row)
+    i = 0
+    for _, row in df.iterrows():
+        poster_url = row['Poster'] if is_valid_image_path(row['Poster']) else get_backup_poster(row['Title'])
+        caption = f"{row['Title']} ({row['year']})"
+        img_url = poster_url if poster_url else "https://via.placeholder.com/150x220?text=No+Image"
 
-features['poster'] = features.apply(
-    lambda row: row['poster'] if isinstance(row['poster'], str) and row['poster'].startswith("http")
-    else resolve_poster_url(row['title']), axis=1)
+        with cols[i % cols_per_row]:
+            st.markdown(
+                f"""<div style='text-align: center; color: white;'>
+                    <img src='{img_url}' width='150'><br>
+                    <span style='font-size: 13px;'>{caption}</span>
+                </div>""", unsafe_allow_html=True
+            )
+        i += 1
 
-# ========== Extracción de características ==========
+# ===================== CARGA DE DATOS =========================
+st.sidebar.title("🎬 Filtros")
+
+# Desde Drive CSV reducido
+url = "https://drive.google.com/uc?id=1RGzGutC4W721li3EsI2Tn9sltWeRkpb2"
+features = pd.read_csv(url)
+
+metadata = pd.read_csv("MovieGenre.csv", encoding='ISO-8859-1')
+df_posters_clean = pd.read_csv("posters_clean.csv")
+
+features = pd.merge(features, metadata, left_on='tmdbId', right_on='imdbId')
+features['year'] = features['Title'].str.extract(r'\((\d{4})\)')
+features['Genre'] = features['Genre'].str.split('|')
+features = features.explode('Genre')
+
+# Validar solo las columnas de features
 numeric_features = features.filter(regex=r'^feat_', axis=1).dropna()
 
-# Clustering PCA + KMeans
+# PCA para clustering
 pca = PCA(n_components=10)
 X = pca.fit_transform(numeric_features)
 kmeans = KMeans(n_clusters=5, random_state=42)
 kmeans.fit(X)
 
-# ========== Funciones ==========
-def extract_features_from_image(image):
-    img = Image.open(image).resize((128, 128))
-    img = np.array(img)
-    r = np.histogram(img[:, :, 0], bins=256, range=(0, 255))[0]
-    g = np.histogram(img[:, :, 1], bins=256, range=(0, 255))[0]
-    b = np.histogram(img[:, :, 2], bins=256, range=(0, 255))[0]
-    return np.concatenate([r, g, b])
+# ===================== HEADER =========================
+st.markdown("# 🎥 Buscador Visual de Películas")
+st.markdown("## 📤 Sube un póster para buscar películas similares")
+uploaded_image = st.file_uploader("Sube un póster", type=["jpg", "png", "jpeg"])
 
-def find_similar_movies(image_path, features_data):
-    query_features = extract_features_from_image(image_path)
-    similarity = cosine_similarity([query_features], features_data)[0]
-    return np.argsort(similarity)[-5:][::-1]
+# ===================== BÚSQUEDA POR IMAGEN =========================
+if uploaded_image:
+    st.image(uploaded_image, caption="Póster subido", width=200)
+    idxs = find_similar_movies(uploaded_image, numeric_features)
+    st.markdown("### 🔍 Películas similares encontradas:")
+    display_posters(features.iloc[idxs])
 
-def show_movies(df):
-    cols = st.columns(5)
-    for i, row in df.iterrows():
-        with cols[i % 5]:
-            st.image(row['poster'], caption=f"{row['title']}\nGéneros: {row['genre']}\n({row['year']})", use_column_width=True)
+# ===================== BÚSQUEDA POR FILTROS =========================
+st.markdown("---")
+st.markdown("## 🎞️ Películas filtradas por género y/o año")
 
-# ========== Interfaz ==========
-st.sidebar.header("🎬 Filtros")
-genres = sorted(features['genre'].dropna().unique())
+genres = sorted(features['Genre'].dropna().unique())
 years = sorted(features['year'].dropna().unique())
 
 selected_genres = st.sidebar.multiselect("Selecciona géneros", genres)
 selected_years = st.sidebar.multiselect("Selecciona años", years)
-search_title = st.sidebar.text_input("🔎 Buscar película por título")
-
-st.title("🎥 Buscador Visual de Películas")
-st.markdown("### 📤 Sube un póster para buscar películas similares")
-uploaded_image = st.file_uploader("Sube un póster", type=["jpg", "png", "jpeg"])
-
-if uploaded_image:
-    st.image(uploaded_image, caption="Póster subido", width=200)
-    idxs = find_similar_movies(uploaded_image, numeric_features)
-    st.subheader("Películas similares encontradas")
-    show_movies(features.iloc[idxs])
-
-if search_title:
-    st.subheader("Resultados por búsqueda textual")
-    filtered = features[features['title'].str.contains(search_title, case=False)]
-    if not filtered.empty:
-        show_movies(filtered.head(10))
-    else:
-        st.info("No se encontró ninguna película con ese título")
-
-st.markdown("---")
-st.subheader("🎬 Películas por filtros")
 
 filtered = features.copy()
 if selected_genres:
-    filtered = filtered[filtered['genre'].isin(selected_genres)]
+    filtered = filtered[filtered['Genre'].isin(selected_genres)]
 if selected_years:
     filtered = filtered[filtered['year'].isin(selected_years)]
 
-filtered = filtered.drop_duplicates(subset='tmdbid')
+filtered = filtered.drop_duplicates(subset='tmdbId')
 if not filtered.empty:
-    show_movies(filtered.head(20))
+    display_posters(filtered)
 else:
-    st.info("Ninguna película coincide con los filtros seleccionados.")
-
+    st.warning("No se encontraron películas con esos filtros.")
 
 
