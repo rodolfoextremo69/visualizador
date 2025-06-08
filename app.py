@@ -12,7 +12,10 @@ poster_features_url = f'https://drive.google.com/uc?id={poster_features_id}'
 features = pd.read_csv(poster_features_url)
 
 # Cargar las características visuales de las imágenes (previamente calculadas)
-features = pd.read_csv('poster_features.csv')  # Ajusta la ruta a tus características
+poster_features_id = '1RGzGutC4W721li3EsI2Tn9sltWeRkpb2'  # el ID correcto
+poster_features_url = f'https://drive.google.com/uc?id={poster_features_id}'
+features = pd.read_csv(poster_features_url)
+
 
 # Cargar los géneros de las películas desde MovieGenre.csv
 movie_genres = pd.read_csv('MovieGenre.csv', encoding='ISO-8859-1')
