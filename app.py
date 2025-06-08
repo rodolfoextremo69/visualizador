@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import zipfile
 import os
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
@@ -24,12 +24,16 @@ body { background-color: #121212; color: #E0E0E0; }
 
 # ========== FUNCIONES ==========
 def extract_features(image_path):
-    image = Image.open(image_path).resize((128, 128))
-    image = np.array(image)
-    r = np.histogram(image[:, :, 0], bins=256, range=(0, 255))[0]
-    g = np.histogram(image[:, :, 1], bins=256, range=(0, 255))[0]
-    b = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
-    return np.concatenate([r, g, b])
+    try:
+        image = Image.open(image_path).convert("RGB").resize((128, 128))
+        image = np.array(image)
+        r = np.histogram(image[:, :, 0], bins=256, range=(0, 255))[0]
+        g = np.histogram(image[:, :, 1], bins=256, range=(0, 255))[0]
+        b = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
+        return np.concatenate([r, g, b])
+    except UnidentifiedImageError:
+        st.error("❌ La imagen subida no es válida.")
+        st.stop()
 
 def find_similar_movies(image_path, features_data, top_n=8):
     query_features = extract_features(image_path)
@@ -40,8 +44,13 @@ def is_valid_image_path(path):
     return isinstance(path, str) and path.startswith("http") and "placeholder" not in path and path != "0"
 
 def get_backup_poster(title, posters_df):
-    match = posters_df[posters_df["title"].str.lower().str.strip() == title.lower().strip()]
-    return match["Poster"].values[0] if not match.empty else None
+    try:
+        match = posters_df[posters_df["title"].str.lower().str.strip() == title.lower().strip()]
+        if not match.empty:
+            return match["Poster"].values[0]
+    except:
+        return None
+    return None
 
 def display_posters(df, posters_df, cols_per_row=5):
     cols = st.columns(cols_per_row)
@@ -103,10 +112,14 @@ uploaded_image = st.file_uploader("O sube un póster", type=["jpg", "png", "jpeg
 
 if uploaded_image:
     st.image(uploaded_image, caption="📌 Póster subido", width=200)
-    idxs = find_similar_movies(uploaded_image, numeric, top_n=8)
-    resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
-    st.subheader("🎯 Recomendaciones basadas en el póster")
-    display_posters(resultados, df_posters_clean)
+    try:
+        idxs = find_similar_movies(uploaded_image, numeric, top_n=8)
+        resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
+        st.subheader("🎯 Recomendaciones basadas en el póster")
+        display_posters(resultados, df_posters_clean)
+    except Exception as e:
+        st.error(f"❌ Error procesando la imagen: {e}")
+        st.stop()
 
 elif search_title.strip():
     result = df[df['Title'].str.lower().str.contains(search_title.lower())]
