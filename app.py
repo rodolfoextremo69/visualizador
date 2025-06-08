@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-from PIL import Image
 import numpy as np
+from PIL import Image
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
@@ -27,9 +27,10 @@ def is_valid_image_path(path):
 
 # =================== CARGA DE DATOS =====================
 
-st.title("\U0001F3AC Buscador Visual de Películas")
+st.set_page_config(page_title="Buscador Visual de Películas", layout="wide")
+st.title("🎬 Explorador de Películas por Similitud Visual")
 
-# Cargar desde Google Drive
+# Cargar CSV desde Google Drive
 url = "https://drive.google.com/uc?id=1RGzGutC4W721li3EsI2Tn9sltWeRkpb2"
 features = pd.read_csv(url)
 
@@ -40,9 +41,10 @@ features['year'] = features['Title'].str.extract(r'\((\d{4})\)')
 features['Genre'] = features['Genre'].str.split('|')
 features = features.explode('Genre')
 
-# =================== PCA + Clustering =====================
+# Convertir columnas numéricas
+numeric_features = features.filter(regex='^feat_', axis=1).apply(pd.to_numeric, errors='coerce').fillna(0)
 
-numeric_features = features.select_dtypes(include=[np.number])
+# =================== PCA + KMeans =====================
 pca = PCA(n_components=2)
 X = pca.fit_transform(numeric_features)
 
@@ -50,13 +52,11 @@ kmeans = KMeans(n_clusters=5, random_state=42)
 kmeans.fit(X)
 
 # =================== SUBIR PÓSTER =====================
-
-uploaded_image = st.file_uploader("\U0001F4E4 Sube un póster de película", type=["jpg", "png", "jpeg"])
-
+uploaded_image = st.file_uploader("📤 Sube un póster de película", type=["jpg", "png", "jpeg"])
 if uploaded_image:
     st.image(uploaded_image, caption="Póster subido", width=250)
     idxs = find_similar_movies(uploaded_image, numeric_features)
-    st.subheader("\U0001F50D Películas similares")
+    st.subheader("🔍 Películas similares")
     cols = st.columns(5)
     for i, idx in enumerate(idxs):
         movie = features.iloc[idx]
@@ -65,13 +65,11 @@ if uploaded_image:
                 st.image(movie.Poster, caption=f"{movie.Title} ({movie.year})", width=160)
 
 # =================== FILTRO POR GÉNERO =====================
-
 genres = sorted(features['Genre'].dropna().unique())
-selected_genre = st.selectbox("\U0001F39E️ Selecciona género", genres)
-
+selected_genre = st.selectbox("🎞️ Selecciona género", genres)
 if selected_genre:
     filtered = features[features['Genre'] == selected_genre].drop_duplicates(subset="tmdbId")
-    st.subheader("Películas filtradas por género:")
+    st.subheader("🎬 Películas filtradas por género:")
     cols = st.columns(5)
     for i, row in filtered.iterrows():
         if is_valid_image_path(row['Poster']):
@@ -79,13 +77,11 @@ if selected_genre:
                 st.image(row['Poster'], caption=f"{row['Title']} ({row['year']})", width=160)
 
 # =================== FILTRO POR AÑO =====================
-
 years = sorted(features['year'].dropna().unique())
-selected_year = st.selectbox("\U0001F4C5 Selecciona año", years)
-
+selected_year = st.selectbox("📅 Selecciona año", years)
 if selected_year:
     filtered = features[features['year'] == selected_year].drop_duplicates(subset="tmdbId")
-    st.subheader("Películas filtradas por año:")
+    st.subheader("📽️ Películas filtradas por año:")
     cols = st.columns(5)
     for i, row in filtered.iterrows():
         if is_valid_image_path(row['Poster']):
