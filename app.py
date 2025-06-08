@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import zipfile
+import os
 from PIL import Image
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -54,6 +56,15 @@ def display_posters(df, posters_df, cols_per_row=5):
 # ========== CARGA DE ARCHIVOS ==========
 st.sidebar.title("🎬 Filtros")
 
+# Descomprimir ZIP si es necesario
+if not os.path.exists("poster_features.csv"):
+    if os.path.exists("poster_features.csv.zip"):
+        with zipfile.ZipFile("poster_features.csv.zip", 'r') as zip_ref:
+            zip_ref.extractall(".")
+    else:
+        st.error("❌ No se encontró 'poster_features.csv' ni su versión ZIP.")
+        st.stop()
+
 try:
     df_features = pd.read_csv("poster_features.csv")
     df_links = pd.read_csv("links.csv")
@@ -63,7 +74,7 @@ except Exception as e:
     st.error(f"❌ Error cargando archivos CSV: {e}")
     st.stop()
 
-# ========== MERGE ==========
+# ========== MERGE Y PROCESAMIENTO ==========
 try:
     df = pd.merge(df_features, df_links, on="tmdbId")
     df = pd.merge(df, df_metadata, on="imdbId")
