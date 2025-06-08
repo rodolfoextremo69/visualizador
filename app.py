@@ -37,7 +37,7 @@ def find_similar_movies(image_path, features_data):
     return np.argsort(similarity)[-5:][::-1]
 
 def is_valid_image_path(path):
-    return isinstance(path, str) and path.startswith("http")
+    return isinstance(path, str) and path.startswith("http") and "placeholder" not in path and path != "0"
 
 def get_backup_poster(title, posters_df):
     match = posters_df[posters_df["title"].str.lower().str.strip() == title.lower().strip()]
@@ -46,9 +46,11 @@ def get_backup_poster(title, posters_df):
 def display_posters(df, posters_df, cols_per_row=5):
     cols = st.columns(cols_per_row)
     for i, (_, row) in enumerate(df.iterrows()):
-        poster_url = row.get("Poster") or get_backup_poster(row["Title"], posters_df)
+        poster_url = row.get("Poster")
         if not is_valid_image_path(poster_url):
-            poster_url = "https://via.placeholder.com/150x220?text=No+Image"
+            poster_url = get_backup_poster(row["Title"], posters_df)
+        if not is_valid_image_path(poster_url):
+            poster_url = "https://via.placeholder.com/150x220?text=Sin+imagen"
         caption = f"{row['Title']} ({row.get('year', '')})"
         with cols[i % cols_per_row]:
             st.image(poster_url, width=150, caption=caption)
@@ -56,7 +58,6 @@ def display_posters(df, posters_df, cols_per_row=5):
 # ========== CARGA DE ARCHIVOS ==========
 st.sidebar.title("🎬 Filtros")
 
-# Descomprimir ZIP si es necesario
 if not os.path.exists("poster_features.csv"):
     if os.path.exists("poster_features.zip"):
         with zipfile.ZipFile("poster_features.zip", 'r') as zip_ref:
@@ -131,6 +132,3 @@ if not filtered.empty:
     display_posters(filtered, df_posters_clean)
 else:
     st.warning("No hay resultados para esos filtros.")
-
-
-
