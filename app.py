@@ -39,7 +39,7 @@ def is_valid_image_path(path):
 
 def get_backup_poster(title, posters_df):
     match = posters_df[posters_df["title"].str.lower().str.strip() == title.lower().strip()]
-    return match["poster_path"].values[0] if not match.empty else None
+    return match["Poster"].values[0] if not match.empty else None
 
 def display_posters(df, posters_df, cols_per_row=5):
     cols = st.columns(cols_per_row)
@@ -51,18 +51,22 @@ def display_posters(df, posters_df, cols_per_row=5):
         with cols[i % cols_per_row]:
             st.image(poster_url, width=150, caption=caption)
 
-## === CARGA DE ARCHIVOS ===
+# ========== CARGA DE ARCHIVOS ==========
+st.sidebar.title("🎬 Filtros")
+
 try:
-    df_features = pd.read_csv("final_movies_with_posters.csv")  # <--- este es tu features.csv
+    df_features = pd.read_csv("poster_features.csv")
+    df_links = pd.read_csv("links.csv")
     df_metadata = pd.read_csv("MovieGenre.csv", encoding='ISO-8859-1')
-    df_posters = pd.read_csv("posters_clean.csv")
+    df_posters_clean = pd.read_csv("posters_clean.csv")
 except Exception as e:
     st.error(f"❌ Error cargando archivos CSV: {e}")
     st.stop()
 
-# ========== PROCESAMIENTO ==========
+# ========== MERGE ==========
 try:
-    df = pd.merge(df_features, df_metadata, left_on='tmdbId', right_on='imdbId')
+    df = pd.merge(df_features, df_links, on="tmdbId")
+    df = pd.merge(df, df_metadata, on="imdbId")
     df['year'] = df['Title'].str.extract(r'\((\d{4})\)')
     df['Genre'] = df['Genre'].str.split('|')
     df = df.explode('Genre')
@@ -89,12 +93,12 @@ if uploaded_image:
     st.image(uploaded_image, caption="Póster subido", width=200)
     idxs = find_similar_movies(uploaded_image, numeric)
     st.subheader("Películas similares:")
-    display_posters(df.iloc[idxs], df_posters)
+    display_posters(df.iloc[idxs], df_posters_clean)
 elif search_title.strip():
     result = df[df['Title'].str.lower().str.contains(search_title.lower())]
     if not result.empty:
         st.subheader(f"Resultados para: {search_title}")
-        display_posters(result.drop_duplicates('tmdbId'), df_posters)
+        display_posters(result.drop_duplicates('tmdbId'), df_posters_clean)
     else:
         st.warning("No se encontraron coincidencias.")
 
@@ -113,9 +117,10 @@ if sel_years:
 
 filtered = filtered.drop_duplicates('tmdbId')
 if not filtered.empty:
-    display_posters(filtered, df_posters)
+    display_posters(filtered, df_posters_clean)
 else:
     st.warning("No hay resultados para esos filtros.")
+
 
 
 
