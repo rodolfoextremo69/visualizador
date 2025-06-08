@@ -8,91 +8,94 @@ from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 import os
 
-# URL del CSV en Google Drive
-poster_features_id = '1RGzGutC4W721li3EsI2Tn9sltWeRkpb2'
-poster_features_url = f'https://drive.google.com/uc?id={poster_features_id}'
+# Validar si una URL de imagen es válida
+def is_valid_image_url(url):
+    return isinstance(url, str) and url.startswith('http') and url.endswith(('.jpg', '.jpeg', '.png'))
+
+# Cargar datos desde Google Drive
+poster_features_url = 'https://drive.google.com/uc?id=1RGzGutC4W721li3EsI2Tn9sltWeRkpb2'
 features = pd.read_csv(poster_features_url)
 
-# Cargar MovieGenre
+# Cargar MovieGenre.csv desde el repositorio (si es local, ajusta esto)
 movie_genres = pd.read_csv('MovieGenre.csv', encoding='ISO-8859-1')
 
-# Unir por tmdbId e imdbId
+# Unir features con géneros
 features_with_genre = pd.merge(features, movie_genres, left_on='tmdbId', right_on='imdbId')
 features_with_genre['year'] = features_with_genre['Title'].str.extract(r'\((\d{4})\)')
 features_with_genre['Genre'] = features_with_genre['Genre'].str.split('|')
 features_with_genre = features_with_genre.explode('Genre')
 
-# Reducción dimensional
+# Mostrar algunos datos
+st.write("Características cargadas:")
+st.write(features_with_genre.head())
+
+# Reducción PCA y clustering
 pca = PCA(n_components=2)
-features_2d = pca.fit_transform(features_with_genre[features.columns[1:]])
+features_2d = pca.fit_transform(features[features.columns[1:]])
 kmeans = KMeans(n_clusters=5)
 kmeans.fit(features_2d)
 features_2d = pd.DataFrame(features_2d, columns=['x', 'y'])
 features_2d['cluster'] = kmeans.labels_
 
-st.title("Buscador Visual de Películas")
-st.subheader("Visualización PCA + KMeans")
+st.write("Distribución de películas en 2D:")
 st.scatter_chart(features_2d[['x', 'y']])
 
+# Función de extracción de features desde una imagen subida
 def extract_features(image_path):
-    image = Image.open(image_path)
-    image = image.resize((128, 128))
+    image = Image.open(image_path).resize((128, 128))
     image = np.array(image)
     red_hist = np.histogram(image[:, :, 0], bins=256, range=(0, 255))[0]
     green_hist = np.histogram(image[:, :, 1], bins=256, range=(0, 255))[0]
     blue_hist = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
     return np.concatenate([red_hist, green_hist, blue_hist])
 
+# Buscar películas similares por póster
 def find_similar_movies(image_path, feature_data, kmeans_model):
     image_features = extract_features(image_path)
     similarities = cosine_similarity([image_features], feature_data)
     return np.argsort(similarities[0])[:5]
 
-def is_valid_image_path(image_path):
-    if isinstance(image_path, str):
-        return os.path.isfile(image_path) or image_path.startswith('http')
-    return False
-
-# === Subir imagen ===
+# Upload para búsqueda visual
 st.header("Buscar películas por similitud visual")
-uploaded_image = st.file_uploader("Sube un póster", type=["jpg", "png", "jpeg"])
-if uploaded_image:
-    st.image(uploaded_image, caption="Póster cargado", use_container_width=True)
-    similar_movies = find_similar_movies(uploaded_image, features_with_genre, kmeans)
-    st.subheader("Películas similares:")
-    cols = st.columns(5)
-    for i, idx in enumerate(similar_movies):
-        with cols[i % 5]:
-            movie = features_with_genre.iloc[idx]
-            st.image(movie.Poster, use_container_width=True)
-            st.markdown(f"**{movie.Title} ({movie.year})**")
-            st.markdown(f"*Géneros:* {movie.Genre}")
+uploaded_image = st.file_uploader("Sube un póster de película", type=["jpg", "png", "jpeg"])
+if uploaded_image is not None:
+    st.image(uploaded_image, caption="Póster cargado", use_column_width=True)
+    similar_movies = find_similar_movies(uploaded_image, features_with_genre[features.columns[1:]], kmeans)
+    st.write("Películas similares:")
+    for idx in similar_movies:
+        movie = features_with_genre.iloc[idx]
+        st.write(f"{movie.Title} ({movie.year})")
+        if is_valid_image_url(movie.Poster):
+            st.image(movie.Poster, width=200)
+        else:
+            st.write("❌ Imagen no disponible")
 
-# === Filtro por género ===
+# Filtro por género
 genres = features_with_genre['Genre'].dropna().unique()
-selected_genre = st.selectbox("Selecciona género", sorted(genres))
+selected_genre = st.selectbox('Selecciona género', sorted(genres))
 filtered_movies = features_with_genre[features_with_genre['Genre'] == selected_genre]
-
-st.subheader("Películas filtradas por género:")
-cols = st.columns(5)
+filtered_movies = filtered_movies.drop_duplicates(subset='tmdbId')
+st.write("Películas filtradas por género:")
+cols = st.columns(4)
 for i, movie in enumerate(filtered_movies.itertuples()):
-    with cols[i % 5]:
-        if is_valid_image_path(movie.Poster):
-            st.image(movie.Poster, use_container_width=True)
+    with cols[i % 4]:
         st.markdown(f"**{movie.Title} ({movie.year})**")
-        st.markdown(f"*Géneros:* {movie.Genre}")
+        if is_valid_image_url(movie.Poster):
+            st.image(movie.Poster, width=180)
+        else:
+            st.write("📷 Imagen no disponible")
 
-# === Filtro por año ===
-years = features_with_genre['year'].dropna().unique()
-selected_year = st.selectbox("Selecciona año", sorted(years))
+# Filtro por año
+years = sorted(features_with_genre['year'].dropna().unique())
+selected_year = st.selectbox('Selecciona año', years)
 filtered_by_year = features_with_genre[features_with_genre['year'] == selected_year]
-
-st.subheader("Películas filtradas por año:")
-cols = st.columns(5)
+filtered_by_year = filtered_by_year.drop_duplicates(subset='tmdbId')
+st.write("Películas filtradas por año:")
+cols = st.columns(4)
 for i, movie in enumerate(filtered_by_year.itertuples()):
-    with cols[i % 5]:
-        if is_valid_image_path(movie.Poster):
-            st.image(movie.Poster, use_container_width=True)
+    with cols[i % 4]:
         st.markdown(f"**{movie.Title} ({movie.year})**")
-        st.markdown(f"*Géneros:* {movie.Genre}")
-
+        if is_valid_image_url(movie.Poster):
+            st.image(movie.Poster, width=180)
+        else:
+            st.write("📷 Imagen no disponible")
