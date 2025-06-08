@@ -58,11 +58,11 @@ st.sidebar.title("🎬 Filtros")
 
 # Descomprimir ZIP si es necesario
 if not os.path.exists("poster_features.csv"):
-    if os.path.exists("poster_features.csv.zip"):
-        with zipfile.ZipFile("poster_features.csv.zip", 'r') as zip_ref:
+    if os.path.exists("poster_features.zip"):
+        with zipfile.ZipFile("poster_features.zip", 'r') as zip_ref:
             zip_ref.extractall(".")
     else:
-        st.error("❌ No se encontró 'poster_features.csv' ni su versión ZIP.")
+        st.error("❌ No se encontró 'poster_features.csv' ni 'poster_features.zip'.")
         st.stop()
 
 try:
@@ -131,7 +131,6 @@ if not filtered.empty:
     display_posters(filtered, df_posters_clean)
 else:
     st.warning("No hay resultados para esos filtros.")
-
 
 
 
