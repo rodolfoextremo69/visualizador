@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from PIL import Image
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
-import os
+from PIL import Image
+import requests
+from io import BytesIO
 
-# ================= FUNCIONES ===================
+# ========== FUNCIONES AUXILIARES ==========
 def extract_features(image_path):
     image = Image.open(image_path).resize((128, 128))
     image = np.array(image)
@@ -17,44 +18,50 @@ def extract_features(image_path):
     return np.concatenate([r, g, b])
 
 def find_similar_movies(image_path, features_data):
-    query = extract_features(image_path)
-    similarity = cosine_similarity([query], features_data)[0]
+    query_features = extract_features(image_path)
+    similarity = cosine_similarity([query_features], features_data)[0]
     return np.argsort(similarity)[-5:][::-1]
 
 def is_valid_image_path(path):
     return isinstance(path, str) and path.startswith("http")
 
-# ================ CARGA DE DATOS ===============
-st.set_page_config(page_title="Buscador Visual de Películas", layout="wide")
-st.title("🎞️ Buscador Visual de Películas")
+# ========== CARGA DE DATOS ==========
+st.title("🎬 Buscador Visual de Películas")
 
-# Cargar features desde Google Drive (ID directo)
-url = "https://drive.google.com/uc?id=1RGzGutC4W721li3EsI2Tn9sltWeRkpb2"
-features_df = pd.read_csv(url)
+# Cargar features desde Google Drive
+poster_features_url = "https://drive.google.com/uc?id=1RGzGutC4W721li3EsI2Tn9sltWeRkpb2"
+features = pd.read_csv(poster_features_url)
 
-# Cargar metadata local
+# Cargar metadata desde archivo local o drive
 metadata = pd.read_csv("MovieGenre.csv", encoding="ISO-8859-1")
-features = pd.merge(features_df, metadata, left_on="tmdbId", right_on="imdbId")
-features['year'] = features['Title'].str.extract(r'\((\d{4})\)')
-features['Genre'] = features['Genre'].str.split('|')
-features = features.explode('Genre')
+features = pd.merge(features, metadata, left_on="tmdbId", right_on="imdbId")
 
-# ================= PCA + CLUSTERING ===================
-numeric_features = features_df.drop(columns=['tmdbId'])
-if not np.issubdtype(numeric_features.dtypes[0], np.number):
-    numeric_features = numeric_features.apply(pd.to_numeric, errors='coerce')
+# Limpieza de datos
+to_exclude = ["tmdbId", "imdbId", "Title", "Genre", "Poster", "year"]
+features["year"] = features["Title"].str.extract(r"\((\d{4})\)")
+features["Genre"] = features["Genre"].str.split("|")
+features = features.explode("Genre")
 
+# Convertir columnas de características a float (para PCA)
+numeric_features = features.drop(columns=[col for col in features.columns if col in to_exclude], errors="ignore")
+numeric_features = numeric_features.apply(pd.to_numeric, errors="coerce").dropna(axis=1, how="any")
+
+# ========== PCA y KMEANS ==========
 pca = PCA(n_components=2)
-X = pca.fit_transform(numeric_features.fillna(0))
+X = pca.fit_transform(numeric_features)
+
 kmeans = KMeans(n_clusters=5, random_state=42)
 kmeans.fit(X)
+features["cluster"] = kmeans.labels_
 
-# ================= POSTER ===================
-uploaded_image = st.file_uploader("\U0001F4E4 Sube un póster de película", type=["jpg", "png", "jpeg"])
+# ========== BUSCADOR VISUAL ==========
+st.subheader("📤 Sube un póster para buscar películas similares")
+uploaded_image = st.file_uploader("Sube un póster", type=["jpg", "png", "jpeg"])
+
 if uploaded_image:
     st.image(uploaded_image, caption="Póster subido", width=200)
     idxs = find_similar_movies(uploaded_image, numeric_features.values)
-    st.subheader("\U0001F50D Películas similares")
+    st.subheader("🔍 Películas similares")
     cols = st.columns(5)
     for i, idx in enumerate(idxs):
         movie = features.iloc[idx]
@@ -62,29 +69,31 @@ if uploaded_image:
             with cols[i % 5]:
                 st.image(movie.Poster, caption=f"{movie.Title} ({movie.year})", width=160)
 
-# ================= GÉNERO ===================
-genres = sorted(features['Genre'].dropna().unique())
-selected_genre = st.selectbox("\ud83c\udfae Selecciona género", genres)
-if selected_genre:
-    filtered = features[features['Genre'] == selected_genre].drop_duplicates('tmdbId')
-    st.subheader("Películas filtradas por género:")
-    cols = st.columns(5)
-    for i, row in filtered.iterrows():
-        if is_valid_image_path(row['Poster']):
-            with cols[i % 5]:
-                st.image(row['Poster'], caption=f"{row['Title']} ({row['year']})", width=160)
+# ========== FILTRO POR GÉNERO ==========
+st.subheader("🎬 Películas filtradas por género:")
+genres = sorted(features["Genre"].dropna().unique())
+selected_genre = st.selectbox("Selecciona género", genres)
 
-# ================= AÑO ===================
-years = sorted(features['year'].dropna().unique())
-selected_year = st.selectbox("\ud83d\uddd3\ufe0f Selecciona año", years)
-if selected_year:
-    filtered = features[features['year'] == selected_year].drop_duplicates('tmdbId')
-    st.subheader("Películas filtradas por año:")
+if selected_genre:
+    filtered = features[features["Genre"] == selected_genre].drop_duplicates(subset="tmdbId")
     cols = st.columns(5)
     for i, row in filtered.iterrows():
-        if is_valid_image_path(row['Poster']):
+        if is_valid_image_path(row["Poster"]):
             with cols[i % 5]:
-                st.image(row['Poster'], caption=f"{row['Title']} ({row['year']})", width=160)
+                st.image(row["Poster"], caption=f"{row['Title']} ({row['year']})", width=160)
+
+# ========== FILTRO POR AÑO ==========
+st.subheader("📅 Películas filtradas por año:")
+years = sorted(features["year"].dropna().unique())
+selected_year = st.selectbox("Selecciona año", years)
+
+if selected_year:
+    filtered = features[features["year"] == selected_year].drop_duplicates(subset="tmdbId")
+    cols = st.columns(5)
+    for i, row in filtered.iterrows():
+        if is_valid_image_path(row["Poster"]):
+            with cols[i % 5]:
+                st.image(row["Poster"], caption=f"{row['Title']} ({row['year']})", width=160)
 
 
 
