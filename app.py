@@ -7,69 +7,86 @@ from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 import os
 
-# === 1. CARGA DE DATOS ===
-# Google Drive raw link
-poster_features_url = "https://drive.google.com/uc?id=1RGzGutC4W721li3EsI2Tn9sltWeRkpb2"
-features = pd.read_csv(poster_features_url)
+# =================== FUNCIONES =====================
 
-# CSV local o del repositorio para MovieGenre
-movie_genres = pd.read_csv('MovieGenre.csv', encoding='ISO-8859-1')
-posters_clean = pd.read_csv('posters_clean.csv')
-
-# === 2. UNIÓN Y PROCESAMIENTO ===
-df = pd.merge(features, movie_genres, left_on='tmdbId', right_on='imdbId')
-df = pd.merge(df, posters_clean[['tmdbId', 'Poster']], on='tmdbId', how='left')
-df['year'] = df['Title'].str.extract(r'\((\d{4})\)')
-df['Genre'] = df['Genre'].str.split('|')
-df = df.explode('Genre')
-
-# === 3. CLUSTERING PARA VISUALIZACIÓN 2D ===
-pca = PCA(n_components=2)
-features_2d = pca.fit_transform(df[features.columns[1:]])
-kmeans = KMeans(n_clusters=5)
-df['x'], df['y'] = features_2d[:, 0], features_2d[:, 1]
-df['cluster'] = kmeans.fit_predict(features_2d)
-
-# === 4. FUNCIONES AUXILIARES ===
 def extract_features(image_path):
     image = Image.open(image_path).resize((128, 128))
     image = np.array(image)
-    red = np.histogram(image[:, :, 0], bins=256, range=(0, 255))[0]
-    green = np.histogram(image[:, :, 1], bins=256, range=(0, 255))[0]
-    blue = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
-    return np.concatenate([red, green, blue])
+    r = np.histogram(image[:, :, 0], bins=256, range=(0, 255))[0]
+    g = np.histogram(image[:, :, 1], bins=256, range=(0, 255))[0]
+    b = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
+    return np.concatenate([r, g, b])
 
-def find_similar_movies(image_path, feature_data):
-    query = extract_features(image_path)
-    similarities = cosine_similarity([query], feature_data)[0]
-    return np.argsort(similarities)[-5:][::-1]
+def find_similar_movies(image_path, features_data):
+    query_features = extract_features(image_path)
+    similarity = cosine_similarity([query_features], features_data)[0]
+    return np.argsort(similarity)[-5:][::-1]
 
 def is_valid_image_path(path):
-    return isinstance(path, str) and (path.startswith("http") or os.path.isfile(path))
+    return isinstance(path, str) and path.startswith("http")
 
-# === 5. INTERFAZ STREAMLIT ===
-st.title("🎬 Explorador de Películas por Similitud Visual")
-uploaded_image = st.file_uploader("Sube un póster para buscar películas similares", type=["jpg", "png", "jpeg"])
+# =================== CARGA DE DATOS =====================
+
+st.title("🎬 Buscador Visual de Películas")
+
+# Cargar desde Google Drive
+url = "https://drive.google.com/uc?id=1RGzGutC4W721li3EsI2Tn9sltWeRkpb2"
+features = pd.read_csv(url)
+
+# Cargar metadata local
+metadata = pd.read_csv("MovieGenre.csv", encoding='ISO-8859-1')
+features = pd.merge(features, metadata, left_on='tmdbId', right_on='imdbId')
+features['year'] = features['Title'].str.extract(r'\((\d{4})\)')
+features['Genre'] = features['Genre'].str.split('|')
+features = features.explode('Genre')
+
+# =================== PCA + Clustering =====================
+
+pca = PCA(n_components=2)
+X = pca.fit_transform(features.iloc[:, 1:1+384])  # Evita columnas extra
+kmeans = KMeans(n_clusters=5, random_state=42)
+kmeans.fit(X)
+
+# =================== SUBIR PÓSTER =====================
+
+uploaded_image = st.file_uploader("📤 Sube un póster de película", type=["jpg", "png", "jpeg"])
 
 if uploaded_image:
-    st.image(uploaded_image, caption="Póster cargado", width=150)
-    top_similares = find_similar_movies(uploaded_image, df[features.columns[1:]].values)
-
-    st.subheader("Películas similares:")
+    st.image(uploaded_image, caption="Póster subido", width=250)
+    idxs = find_similar_movies(uploaded_image, features.iloc[:, 1:1+768])
+    st.subheader("🔍 Películas similares")
     cols = st.columns(5)
-    for i, idx in enumerate(top_similares):
-        movie = df.iloc[idx]
-        with cols[i % 5]:
-            st.image(movie.Poster, caption=f"{movie.Title} ({movie.year})", width=150)
+    for i, idx in enumerate(idxs):
+        movie = features.iloc[idx]
+        if is_valid_image_path(movie.Poster):
+            with cols[i % 5]:
+                st.image(movie.Poster, caption=f"{movie.Title} ({movie.year})", width=160)
 
-# === 6. FILTRO POR GÉNERO ===
-st.subheader("🎞️ Películas filtradas por género:")
-genre = st.selectbox("Selecciona género", sorted(df['Genre'].dropna().unique()))
-filtered = df[df['Genre'] == genre].drop_duplicates('tmdbId')
+# =================== FILTRO POR GÉNERO =====================
 
-cols = st.columns(5)
-for i, movie in enumerate(filtered.itertuples()):
-    if is_valid_image_path(movie.Poster):
-        with cols[i % 5]:
-            st.image(movie.Poster, caption=f"{movie.Title} ({movie.year})", width=150)
+genres = sorted(features['Genre'].dropna().unique())
+selected_genre = st.selectbox("🎞️ Selecciona género", genres)
+
+if selected_genre:
+    filtered = features[features['Genre'] == selected_genre].drop_duplicates(subset="tmdbId")
+    st.subheader("Películas filtradas por género:")
+    cols = st.columns(5)
+    for i, row in filtered.iterrows():
+        if is_valid_image_path(row['Poster']):
+            with cols[i % 5]:
+                st.image(row['Poster'], caption=f"{row['Title']} ({row['year']})", width=160)
+
+# =================== FILTRO POR AÑO =====================
+
+years = sorted(features['year'].dropna().unique())
+selected_year = st.selectbox("📅 Selecciona año", years)
+
+if selected_year:
+    filtered = features[features['year'] == selected_year].drop_duplicates(subset="tmdbId")
+    st.subheader("Películas filtradas por año:")
+    cols = st.columns(5)
+    for i, row in filtered.iterrows():
+        if is_valid_image_path(row['Poster']):
+            with cols[i % 5]:
+                st.image(row['Poster'], caption=f"{row['Title']} ({row['year']})", width=160)
 
