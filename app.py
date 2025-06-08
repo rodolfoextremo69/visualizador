@@ -6,6 +6,10 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 import os
+# Cargar poster_features.csv desde Google Drive
+poster_features_id = '1RGzGutC4W721li3EsI2Tn9sltWeRkpb2'
+poster_features_url = f'https://drive.google.com/uc?id={poster_features_id}'
+features = pd.read_csv(poster_features_url)
 
 # Cargar las características visuales de las imágenes (previamente calculadas)
 features = pd.read_csv('poster_features.csv')  # Ajusta la ruta a tus características
