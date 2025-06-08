@@ -27,6 +27,7 @@ def is_valid_image_path(path):
 
 # =================== CARGA DE DATOS =====================
 
+st.set_page_config(page_title="Buscador Visual de Películas", layout="wide")
 st.title("🎬 Buscador Visual de Películas")
 
 # Cargar desde Google Drive
@@ -43,7 +44,7 @@ features = features.explode('Genre')
 # =================== PCA + Clustering =====================
 
 pca = PCA(n_components=2)
-X = pca.fit_transform(features.iloc[:, 1:1+384])  # Evita columnas extra
+X = pca.fit_transform(features.iloc[:, 1:1+384])
 kmeans = KMeans(n_clusters=5, random_state=42)
 kmeans.fit(X)
 
@@ -64,12 +65,12 @@ if uploaded_image:
 
 # =================== FILTRO POR GÉNERO =====================
 
+st.subheader("🎬 Películas filtradas por género:")
 genres = sorted(features['Genre'].dropna().unique())
 selected_genre = st.selectbox("🎞️ Selecciona género", genres)
 
 if selected_genre:
     filtered = features[features['Genre'] == selected_genre].drop_duplicates(subset="tmdbId")
-    st.subheader("Películas filtradas por género:")
     cols = st.columns(5)
     for i, row in filtered.iterrows():
         if is_valid_image_path(row['Poster']):
@@ -78,12 +79,12 @@ if selected_genre:
 
 # =================== FILTRO POR AÑO =====================
 
+st.subheader("📅 Películas filtradas por año:")
 years = sorted(features['year'].dropna().unique())
 selected_year = st.selectbox("📅 Selecciona año", years)
 
 if selected_year:
     filtered = features[features['year'] == selected_year].drop_duplicates(subset="tmdbId")
-    st.subheader("Películas filtradas por año:")
     cols = st.columns(5)
     for i, row in filtered.iterrows():
         if is_valid_image_path(row['Poster']):
