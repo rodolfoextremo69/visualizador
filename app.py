@@ -79,7 +79,7 @@ def display_posters_with_buttons(df, posters_df, features_data, top_n=8, cols_pe
                 movie_idx = row.name
                 query_vector = features_data.iloc[movie_idx].values.reshape(1, -1)
                 similarity = cosine_similarity(query_vector, features_data)[0]
-                idxs = find_similar_movies(uploaded_image, numeric, top_n=8
+                idxs = find_similar_movies(uploaded_image, numeric, top_n=8)
                 resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
                 st.subheader(f"🎯 Películas similares a: {row['Title']}")
                 display_posters(resultados, posters_df)
