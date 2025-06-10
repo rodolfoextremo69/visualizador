@@ -79,8 +79,8 @@ def display_posters_with_buttons(df, posters_df, features_data, top_n=8, cols_pe
                 movie_idx = row.name
                 query_vector = features_data.iloc[movie_idx].values.reshape(1, -1)
                 similarity = cosine_similarity(query_vector, features_data)[0]
-                idxs = np.argsort(similarity)[-top_n:][::-1]
-                resultados = df.iloc[idxs].drop_duplicates('tmdbId')
+                idxs = find_similar_movies(uploaded_image, numeric, top_n=8
+                resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
                 st.subheader(f"🎯 Películas similares a: {row['Title']}")
                 display_posters(resultados, posters_df)
 
@@ -133,13 +133,23 @@ uploaded_image = st.file_uploader("O sube un póster", type=["jpg", "png", "jpeg
 if uploaded_image:
     st.image(uploaded_image, caption="📌 Póster subido", width=200)
     try:
-        idxs = find_similar_movies(uploaded_image, numeric, top_n=8)
-        resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
+        # Extraer vectores de la imagen subida y normalizar
+        query_vec = extract_features(uploaded_image)
+        if query_vec.shape[0] != numeric.shape[1]:
+            st.error(f"❌ Dimensión incompatible. Imagen: {query_vec.shape[0]}, Base: {numeric.shape[1]}")
+            st.stop()
+
+        from sklearn.preprocessing import normalize
+        similarity = cosine_similarity(normalize([query_vec]), normalize(numeric.values))[0]
+        idxs = np.argsort(similarity)[-8:][::-1]
+
+        resultados = df.iloc[idxs].drop_duplicates('tmdbId')
         st.subheader("🎯 Recomendaciones basadas en el póster")
         display_posters_with_buttons(resultados, df_posters_clean, numeric)
     except Exception as e:
         st.error(f"❌ Error procesando la imagen: {e}")
         st.stop()
+
 
 elif search_title.strip():
     result = df[df['Title'].str.lower().str.contains(search_title.lower())]
