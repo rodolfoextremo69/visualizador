@@ -136,7 +136,7 @@ if uploaded_image:
         idxs = find_similar_movies(uploaded_image, numeric, top_n=8)
         resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
         st.subheader("🎯 Recomendaciones basadas en el póster")
-        display_posters(resultados, df_posters_clean)
+        display_posters_with_buttons(resultados, df_posters_clean, numeric)
     except Exception as e:
         st.error(f"❌ Error procesando la imagen: {e}")
         st.stop()
