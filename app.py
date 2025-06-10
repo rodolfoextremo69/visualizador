@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -168,3 +167,4 @@ if not filtered.empty:
     display_posters_with_buttons(filtered, df_posters_clean, numeric)
 else:
     st.warning("No hay resultados para esos filtros.")
+
