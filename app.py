@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -64,6 +65,26 @@ def display_posters(df, posters_df, cols_per_row=5):
         with cols[i % cols_per_row]:
             st.image(poster_url, width=150, caption=caption)
 
+def display_posters_with_buttons(df, posters_df, features_data, top_n=8, cols_per_row=5):
+    cols = st.columns(cols_per_row)
+    for i, (_, row) in enumerate(df.iterrows()):
+        poster_url = row.get("Poster")
+        if not is_valid_image_path(poster_url):
+            poster_url = get_backup_poster(row["Title"], posters_df)
+        if not is_valid_image_path(poster_url):
+            poster_url = "https://via.placeholder.com/150x220?text=Sin+imagen"
+        caption = f"{row['Title']} ({row.get('year', '')})"
+        with cols[i % cols_per_row]:
+            st.image(poster_url, width=150, caption=caption)
+            if st.button(f"🔁 Ver similares {i}", key=f"sim_{i}"):
+                movie_idx = row.name
+                query_vector = features_data.iloc[movie_idx].values.reshape(1, -1)
+                similarity = cosine_similarity(query_vector, features_data)[0]
+                idxs = np.argsort(similarity)[-top_n:][::-1]
+                resultados = df.iloc[idxs].drop_duplicates('tmdbId')
+                st.subheader(f"🎯 Películas similares a: {row['Title']}")
+                display_posters(resultados, posters_df)
+
 # ========== CARGA DE ARCHIVOS ==========
 st.sidebar.title("🎬 Filtros")
 
@@ -125,7 +146,7 @@ elif search_title.strip():
     result = df[df['Title'].str.lower().str.contains(search_title.lower())]
     if not result.empty:
         st.subheader(f"🔍 Resultados para: {search_title}")
-        display_posters(result.drop_duplicates('tmdbId'), df_posters_clean)
+        display_posters_with_buttons(result.drop_duplicates('tmdbId'), df_posters_clean, numeric)
     else:
         st.warning("No se encontraron coincidencias.")
 
@@ -144,6 +165,6 @@ if sel_years:
 
 filtered = filtered.drop_duplicates('tmdbId')
 if not filtered.empty:
-    display_posters(filtered, df_posters_clean)
+    display_posters_with_buttons(filtered, df_posters_clean, numeric)
 else:
     st.warning("No hay resultados para esos filtros.")
