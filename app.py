@@ -16,13 +16,16 @@ def extract_image_features(image_file):
     try:
         image = Image.open(image_file).convert("RGB").resize((224, 224))
         image = np.array(image)
-        r = np.histogram(image[:, :, 0], bins=35, range=(0, 255))[0]
-        g = np.histogram(image[:, :, 1], bins=35, range=(0, 255))[0]
-        b = np.histogram(image[:, :, 2], bins=35, range=(0, 255))[0]
-        return np.concatenate([r, g, b])
+
+        r = np.histogram(image[:, :, 0], bins=64, range=(0, 255), density=True)[0]
+        g = np.histogram(image[:, :, 1], bins=64, range=(0, 255), density=True)[0]
+        b = np.histogram(image[:, :, 2], bins=64, range=(0, 255), density=True)[0]
+
+        return np.concatenate([r, g, b]).astype(np.float32)
     except UnidentifiedImageError:
         st.error("❌ Imagen inválida.")
         return None
+
 
 def is_valid_url(url):
     return isinstance(url, str) and url.startswith("http")
