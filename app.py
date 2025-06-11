@@ -73,7 +73,7 @@ except Exception as e:
 
 # ========== COMBINACIÓN Y LIMPIEZA ========== #
 try:
-    df = pd.merge(df_features, df_movies, on="filename")
+    df = pd.merge(df_features, df_movies, on="tmdbId")
     df["year"] = df["title"].str.extract(r"\((\d{4})\)")
     df["genres_list"] = df["genres"].fillna("").apply(lambda x: x.split("|"))
 
