@@ -7,6 +7,7 @@ from PIL import Image, UnidentifiedImageError
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import normalize
 
 # ========== CONFIGURACIÓN ==========
 st.set_page_config(layout="wide")
@@ -23,25 +24,21 @@ body { background-color: #121212; color: #E0E0E0; }
 """, unsafe_allow_html=True)
 
 # ========== FUNCIONES ==========
-def extract_features(image_path):
+
+def extract_features(image_file):
     try:
-        image = Image.open(image_path).convert("RGB").resize((128, 128))
+        image = Image.open(image_file).convert("RGB").resize((128, 128))
         image = np.array(image)
         r = np.histogram(image[:, :, 0], bins=256, range=(0, 255))[0]
         g = np.histogram(image[:, :, 1], bins=256, range=(0, 255))[0]
         b = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
         return np.concatenate([r, g, b])
     except UnidentifiedImageError:
-        st.error("❌ La imagen subida no es válida.")
-        st.stop()
-
-def find_similar_movies(image_path, features_data, top_n=8):
-    query_features = extract_features(image_path)
-    similarity = cosine_similarity([query_features], features_data)[0]
-    return np.argsort(similarity)[-top_n:][::-1]
+        st.error("❌ Imagen inválida.")
+        return None
 
 def is_valid_image_path(path):
-    return isinstance(path, str) and path.startswith("http") and "placeholder" not in path and path != "0"
+    return isinstance(path, str) and path.strip() != "" and path != "0"
 
 def get_backup_poster(title, posters_df):
     try:
@@ -52,21 +49,10 @@ def get_backup_poster(title, posters_df):
         return None
     return None
 
-def display_posters(df, posters_df, cols_per_row=5):
+def display_posters_with_buttons(df_view, posters_df, features_data, top_n=8, cols_per_row=5):
+    df_view = df_view.reset_index(drop=True)
     cols = st.columns(cols_per_row)
-    for i, (_, row) in enumerate(df.iterrows()):
-        poster_url = row.get("Poster")
-        if not is_valid_image_path(poster_url):
-            poster_url = get_backup_poster(row["Title"], posters_df)
-        if not is_valid_image_path(poster_url):
-            poster_url = "https://via.placeholder.com/150x220?text=Sin+imagen"
-        caption = f"{row['Title']} ({row.get('year', '')})"
-        with cols[i % cols_per_row]:
-            st.image(poster_url, width=150, caption=caption)
-
-def display_posters_with_buttons(df, posters_df, features_data, top_n=8, cols_per_row=5):
-    cols = st.columns(cols_per_row)
-    for i, (_, row) in enumerate(df.iterrows()):
+    for i, (_, row) in enumerate(df_view.iterrows()):
         poster_url = row.get("Poster")
         if not is_valid_image_path(poster_url):
             poster_url = get_backup_poster(row["Title"], posters_df)
@@ -76,13 +62,14 @@ def display_posters_with_buttons(df, posters_df, features_data, top_n=8, cols_pe
         with cols[i % cols_per_row]:
             st.image(poster_url, width=150, caption=caption)
             if st.button(f"🔁 Ver similares {i}", key=f"sim_{i}"):
-                movie_idx = row.name
-                query_vector = features_data.iloc[movie_idx].values.reshape(1, -1)
-                similarity = cosine_similarity(query_vector, features_data)[0]
-                idxs = find_similar_movies(uploaded_image, numeric, top_n=8)
-                resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
+                imdb_id = row["imdbId"]
+                base_row = df[df["imdbId"] == imdb_id].iloc[0]
+                query_vector = features_data.loc[base_row.name].values.reshape(1, -1)
+                similarity = cosine_similarity(normalize(query_vector), normalize(features_data.values))[0]
+                idxs = np.argsort(similarity)[-top_n:][::-1]
+                resultados = df.iloc[idxs].drop_duplicates('tmdbId')
                 st.subheader(f"🎯 Películas similares a: {row['Title']}")
-                display_posters(resultados, posters_df)
+                display_posters_with_buttons(resultados, posters_df, features_data)
 
 # ========== CARGA DE ARCHIVOS ==========
 st.sidebar.title("🎬 Filtros")
@@ -133,23 +120,20 @@ uploaded_image = st.file_uploader("O sube un póster", type=["jpg", "png", "jpeg
 if uploaded_image:
     st.image(uploaded_image, caption="📌 Póster subido", width=200)
     try:
-        # Extraer vectores de la imagen subida y normalizar
         query_vec = extract_features(uploaded_image)
+        if query_vec is None:
+            st.stop()
         if query_vec.shape[0] != numeric.shape[1]:
             st.error(f"❌ Dimensión incompatible. Imagen: {query_vec.shape[0]}, Base: {numeric.shape[1]}")
             st.stop()
-
-        from sklearn.preprocessing import normalize
         similarity = cosine_similarity(normalize([query_vec]), normalize(numeric.values))[0]
         idxs = np.argsort(similarity)[-8:][::-1]
-
         resultados = df.iloc[idxs].drop_duplicates('tmdbId')
         st.subheader("🎯 Recomendaciones basadas en el póster")
         display_posters_with_buttons(resultados, df_posters_clean, numeric)
     except Exception as e:
         st.error(f"❌ Error procesando la imagen: {e}")
         st.stop()
-
 
 elif search_title.strip():
     result = df[df['Title'].str.lower().str.contains(search_title.lower())]
