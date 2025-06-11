@@ -115,10 +115,10 @@ st.markdown("# 🎥 Buscador Visual de Películas")
 st.markdown("### 📤 Sube un póster o escribe un nombre para buscar")
 
 search_title = st.text_input("🔎 Buscar por nombre")
-uploaded_image = st.file_uploader("O sube un póster", type=["jpg", "png", "jpeg"])
+uploaded_image = st.file_uploader("O sube un póster", type=["jpg", "jpeg", "png"])
 
-if uploaded_image:
-    st.image(uploaded_image, caption="📌 Póster subido", width=200)
+if uploaded_image is not None:
+    st.image(uploaded_image, caption="📌 Póster subido", width=250)
     try:
         query_vec = extract_features(uploaded_image)
         if query_vec is None:
