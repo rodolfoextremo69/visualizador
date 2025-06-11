@@ -56,7 +56,7 @@ def display_posters(indices, df_data, features_data, top_n=8):
 # ========== CARGA DE DATOS ========== #
 try:
     df_features = pd.read_csv("poster_features.zip")
-    df_movies = pd.read_csv("movies_posters.csv")
+    df_movies = pd.read_csv("posters_clean.csv")
 except Exception as e:
     st.error(f"❌ Error cargando archivos CSV: {e}")
     st.stop()
