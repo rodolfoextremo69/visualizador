@@ -14,7 +14,7 @@ st.write("Busca por nombre, filtra por género o sube un póster para obtener re
 
 def extract_image_features(image_file):
     try:
-        image = Image.open(image_file).convert("RGB").resize((128, 128))
+        image = Image.open(image_file).convert("RGB").resize((224, 224))
         image = np.array(image)
         r = np.histogram(image[:, :, 0], bins=35, range=(0, 255))[0]
         g = np.histogram(image[:, :, 1], bins=35, range=(0, 255))[0]
