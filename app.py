@@ -18,16 +18,16 @@ def extract_image_features(image_file):
         image = Image.open(image_file).convert("RGB").resize((128, 128))
         image = np.array(image)
 
-        # Mantienes 35 bins, pero agregas normalización
-        bins = 35
+        # Usamos histogramas de 64 bins por canal (más fino que 35)
+        bins = 64
         r = np.histogram(image[:, :, 0], bins=bins, range=(0, 255))[0]
         g = np.histogram(image[:, :, 1], bins=bins, range=(0, 255))[0]
         b = np.histogram(image[:, :, 2], bins=bins, range=(0, 255))[0]
 
-        # Normalización por canal
-        r = r / (r.sum() + 1e-6)
-        g = g / (g.sum() + 1e-6)
-        b = b / (b.sum() + 1e-6)
+        # Normalizamos cada canal para que no dependa del tamaño de la imagen
+        r = r / r.sum()
+        g = g / g.sum()
+        b = b / b.sum()
 
         return np.concatenate([r, g, b])
     except UnidentifiedImageError:
