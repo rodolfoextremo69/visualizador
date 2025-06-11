@@ -1,118 +1,170 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import zipfile
+import os
 from PIL import Image, UnidentifiedImageError
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import normalize
 
-# ========== CONFIG ==========
+# ========== CONFIGURACIÓN ==========
 st.set_page_config(layout="wide")
-st.title("🎬 Buscador Visual de Películas")
-st.write("Busca por nombre, filtra por género o sube un póster para obtener recomendaciones.")
+st.markdown("""
+<style>
+body { background-color: #121212; color: #E0E0E0; }
+.stTextInput input, .stSelectbox div, .stMultiSelect div {
+    background-color:#333 !important; color:#E0E0E0 !important;
+}
+.stButton>button, .stFileUploader>div {
+    background-color:#222; color:#E0E0E0;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ========== FUNCIONES ==========
-
-def extract_image_features(image_file):
+def extract_features(image_path):
     try:
-        image = Image.open(image_file).convert("RGB").resize((128, 128))
+        image = Image.open(image_path).convert("RGB").resize((128, 128))
         image = np.array(image)
-        r = np.histogram(image[:, :, 0], bins=35, range=(0, 255))[0]
-        g = np.histogram(image[:, :, 1], bins=35, range=(0, 255))[0]
-        b = np.histogram(image[:, :, 2], bins=35, range=(0, 255))[0]
+        r = np.histogram(image[:, :, 0], bins=256, range=(0, 255))[0]
+        g = np.histogram(image[:, :, 1], bins=256, range=(0, 255))[0]
+        b = np.histogram(image[:, :, 2], bins=256, range=(0, 255))[0]
         return np.concatenate([r, g, b])
     except UnidentifiedImageError:
-        st.error("❌ Imagen inválida.")
+        st.error("❌ La imagen subida no es válida.")
+        st.stop()
+
+def find_similar_movies(image_path, features_data, top_n=8):
+    query_features = extract_features(image_path)
+    similarity = cosine_similarity([query_features], features_data)[0]
+    return np.argsort(similarity)[-top_n:][::-1]
+
+def is_valid_image_path(path):
+    return isinstance(path, str) and path.startswith("http") and "placeholder" not in path and path != "0"
+
+def get_backup_poster(title, posters_df):
+    try:
+        match = posters_df[posters_df["title"].str.lower().str.strip() == title.lower().strip()]
+        if not match.empty:
+            return match["Poster"].values[0]
+    except:
         return None
+    return None
 
-def is_valid_url(url):
-    return isinstance(url, str) and url.startswith("http")
+def display_posters(df, posters_df, cols_per_row=5):
+    cols = st.columns(cols_per_row)
+    for i, (_, row) in enumerate(df.iterrows()):
+        poster_url = row.get("Poster")
+        if not is_valid_image_path(poster_url):
+            poster_url = get_backup_poster(row["Title"], posters_df)
+        if not is_valid_image_path(poster_url):
+            poster_url = "https://via.placeholder.com/150x220?text=Sin+imagen"
+        caption = f"{row['Title']} ({row.get('year', '')})"
+        with cols[i % cols_per_row]:
+            st.image(poster_url, width=150, caption=caption)
 
-def display_posters(indices, df_data, features_data, top_n=8):
-    cols = st.columns(4)
-    for i, idx in enumerate(indices):
-        row = df_data.iloc[idx]
-        title = row["title"]
-        poster = row["Poster"]
-        genres = row.get("genres", "")
-        year = row.get("year", "")
-        score = row.get("IMDB Score", "")
-        with cols[i % 4]:
-            if is_valid_url(poster):
-                st.image(poster, width=150, caption=title)
-            else:
-                st.image("https://via.placeholder.com/150x220?text=Sin+imagen", width=150)
-            st.caption(f"Géneros: {genres}")
-            st.caption(f"Año: {year} | IMDB ⭐ {score}")
-            if st.button(f"🔁 Ver similares {i}", key=f"sim_{i}_{title}"):
-                query_vector = features_data[idx].reshape(1, -1)
-                similarity = cosine_similarity(normalize(query_vector), normalize(features_data))[0]
-                similar_idx = np.argsort(similarity)[-top_n:][::-1]
-                st.subheader(f"🎯 Películas similares a: {title}")
-                display_posters(similar_idx, df_data, features_data)
+def display_posters_with_buttons(df, posters_df, features_data, top_n=8, cols_per_row=5):
+    cols = st.columns(cols_per_row)
+    for i, (_, row) in enumerate(df.iterrows()):
+        poster_url = row.get("Poster")
+        if not is_valid_image_path(poster_url):
+            poster_url = get_backup_poster(row["Title"], posters_df)
+        if not is_valid_image_path(poster_url):
+            poster_url = "https://via.placeholder.com/150x220?text=Sin+imagen"
+        caption = f"{row['Title']} ({row.get('year', '')})"
+        with cols[i % cols_per_row]:
+            st.image(poster_url, width=150, caption=caption)
+            if st.button(f"🔁 Ver similares {i}", key=f"sim_{i}"):
+                movie_idx = row.name
+                query_vector = features_data.iloc[movie_idx].values.reshape(1, -1)
+                similarity = cosine_similarity(query_vector, features_data)[0]
+                idxs = np.argsort(similarity)[-top_n:][::-1]
+                resultados = df.iloc[idxs].drop_duplicates('tmdbId')
+                st.subheader(f"🎯 Películas similares a: {row['Title']}")
+                display_posters(resultados, posters_df)
 
-# ========== CARGA DE DATOS ==========
+# ========== CARGA DE ARCHIVOS ==========
+st.sidebar.title("🎬 Filtros")
+
+if not os.path.exists("poster_features.csv"):
+    if os.path.exists("poster_features.zip"):
+        with zipfile.ZipFile("poster_features.zip", 'r') as zip_ref:
+            zip_ref.extractall(".")
+    else:
+        st.error("❌ No se encontró 'poster_features.csv' ni 'poster_features.zip'.")
+        st.stop()
+
 try:
     df_features = pd.read_csv("poster_features.csv")
-    df_movies = pd.read_csv("movies_posters.csv")
+    df_links = pd.read_csv("links.csv")
+    df_metadata = pd.read_csv("MovieGenre.csv", encoding='ISO-8859-1')
+    df_posters_clean = pd.read_csv("posters_clean.csv")
 except Exception as e:
     st.error(f"❌ Error cargando archivos CSV: {e}")
     st.stop()
 
-# Unir por tmdbId
+# ========== MERGE Y PROCESAMIENTO ==========
 try:
-    df = pd.merge(df_features, df_movies, on="tmdbId")
-    df["year"] = df["title"].str.extract(r"\((\d{4})\)")
-    df["genres_list"] = df["genres"].fillna("").apply(lambda x: x.split("|"))
-    feature_cols = [col for col in df.columns if col.startswith("feat_")]
-    features_array = df[feature_cols].values
+    df = pd.merge(df_features, df_links, on="tmdbId")
+    df = pd.merge(df, df_metadata, on="imdbId")
+    df['year'] = df['Title'].str.extract(r'\((\d{4})\)')
+    df['Genre'] = df['Genre'].str.split('|')
+    df = df.explode('Genre')
+    numeric = df.filter(regex='^feat_', axis=1).dropna()
+
+    pca = PCA(n_components=10)
+    X = pca.fit_transform(numeric)
+    kmeans = KMeans(n_clusters=5, random_state=42).fit(X)
+
+    genres = sorted(df['Genre'].dropna().unique())
+    years = sorted(df['year'].dropna().unique())
 except Exception as e:
-    st.error(f"❌ Error combinando datos: {e}")
+    st.error(f"❌ Error procesando datos: {e}")
     st.stop()
 
-# ========== INTERFAZ ==========
-st.sidebar.title("🎛️ Filtros")
-all_genres = sorted({g.strip() for sublist in df["genres_list"] for g in sublist if g})
-all_years = sorted(df["year"].dropna().unique())
+# ========== INTERFAZ PRINCIPAL ==========
+st.markdown("# 🎥 Buscador Visual de Películas")
+st.markdown("### 📤 Sube un póster o escribe un nombre para buscar")
 
-selected_genres = st.sidebar.multiselect("Filtrar por género", all_genres)
-selected_years = st.sidebar.multiselect("Filtrar por año", all_years)
+search_title = st.text_input("🔎 Buscar por nombre")
+uploaded_image = st.file_uploader("O sube un póster", type=["jpg", "png", "jpeg"])
 
-search_text = st.text_input("🔎 Buscar por nombre")
-uploaded_file = st.file_uploader("📤 O sube un póster", type=["jpg", "jpeg", "png"])
+if uploaded_image:
+    st.image(uploaded_image, caption="📌 Póster subido", width=200)
+    try:
+        idxs = find_similar_movies(uploaded_image, numeric, top_n=8)
+        resultados = df.iloc[idxs].drop_duplicates(subset='tmdbId')
+        st.subheader("🎯 Recomendaciones basadas en el póster")
+        display_posters(resultados, df_posters_clean)
+    except Exception as e:
+        st.error(f"❌ Error procesando la imagen: {e}")
+        st.stop()
 
-# ========== FILTRADO / BÚSQUEDA ==========
-filtered_df = df.copy()
+elif search_title.strip():
+    result = df[df['Title'].str.lower().str.contains(search_title.lower())]
+    if not result.empty:
+        st.subheader(f"🔍 Resultados para: {search_title}")
+        display_posters_with_buttons(result.drop_duplicates('tmdbId'), df_posters_clean, numeric)
+    else:
+        st.warning("No se encontraron coincidencias.")
 
-if selected_genres:
-    filtered_df = filtered_df[filtered_df["genres_list"].apply(lambda g: any(genre in g for genre in selected_genres))]
+# ========== FILTROS ==========
+st.markdown("---")
+st.subheader("🎞️ Películas por género y año")
 
-if selected_years:
-    filtered_df = filtered_df[filtered_df["year"].isin(selected_years)]
+sel_genres = st.sidebar.multiselect("Géneros", genres)
+sel_years = st.sidebar.multiselect("Años", years)
 
-if search_text.strip():
-    filtered_df = filtered_df[filtered_df["title"].str.lower().str.contains(search_text.strip().lower())]
+filtered = df.copy()
+if sel_genres:
+    filtered = filtered[filtered['Genre'].isin(sel_genres)]
+if sel_years:
+    filtered = filtered[filtered['year'].isin(sel_years)]
 
-# ========== RESULTADO POR IMAGEN ==========
-if uploaded_file:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="📌 Póster subido", width=250)
-    query_vec = extract_image_features(uploaded_file)
-
-    if query_vec is not None:
-        if query_vec.shape[0] != features_array.shape[1]:
-            st.error(f"❌ Dimensión incompatible. Imagen: {query_vec.shape[0]}, Base: {features_array.shape[1]}")
-            st.stop()
-
-        similarity = cosine_similarity(normalize([query_vec]), normalize(features_array))[0]
-        top_idxs = np.argsort(similarity)[-8:][::-1]
-        st.subheader("🎯 Recomendaciones basadas en el póster:")
-        display_posters(top_idxs, df, features_array)
-
-# ========== RESULTADOS FILTRADOS / TEXTO ==========
-elif not filtered_df.empty:
-    st.subheader("📋 Resultados filtrados:")
-    filtered_idxs = filtered_df.index.tolist()
-    display_posters(filtered_idxs[:8], df, features_array)
+filtered = filtered.drop_duplicates('tmdbId')
+if not filtered.empty:
+    display_posters_with_buttons(filtered, df_posters_clean, numeric)
 else:
-    st.info("🛈 No hay resultados. Usa filtros, búsqueda o sube una imagen.")
+    st.warning("No hay resultados para esos filtros.")
 
