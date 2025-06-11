@@ -27,7 +27,7 @@ def extract_image_features(image_file):
 def is_valid_url(url):
     return isinstance(url, str) and url.startswith("http")
 
-def display_posters(indices, df_data, features_data, top_n=8):
+def display_posters(indices, df_data, features_data, top_n=10):
     cols = st.columns(4)
     for i, idx in enumerate(indices):
         row = df_data.iloc[idx]
@@ -38,9 +38,9 @@ def display_posters(indices, df_data, features_data, top_n=8):
         score = row.get("IMDB Score", "")
         with cols[i % 4]:
             if is_valid_url(poster):
-                st.image(poster, width=150, caption=title)
+                st.image(poster, width=100, caption=title)  # Tamaño reducido
             else:
-                st.image("https://via.placeholder.com/150x220?text=Sin+imagen", width=150)
+                st.image("https://via.placeholder.com/100x150?text=Sin+imagen", width=100)
             st.caption(f"Géneros: {genres}")
             st.caption(f"Año: {year} | IMDB ⭐ {score}")
             if st.button(f"🔁 Ver similares {i}", key=f"sim_{i}_{title}"):
