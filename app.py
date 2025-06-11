@@ -5,12 +5,13 @@ from PIL import Image, UnidentifiedImageError
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 
-# ========== CONFIG ========== #
+# ========== CONFIG ==========
 st.set_page_config(layout="wide")
 st.title("🎬 Buscador Visual de Películas")
 st.write("Busca por nombre, filtra por género o sube un póster para obtener recomendaciones.")
 
-# ========== FUNCIONES ========== #
+# ========== FUNCIONES ==========
+
 def extract_image_features(image_file):
     try:
         image = Image.open(image_file).convert("RGB").resize((128, 128))
@@ -26,7 +27,7 @@ def extract_image_features(image_file):
 def is_valid_url(url):
     return isinstance(url, str) and url.startswith("http")
 
-def display_posters(indices, df_data, features_data, top_n=8, mini_size=False):
+def display_posters(indices, df_data, features_data, top_n=8):
     cols = st.columns(4)
     for i, idx in enumerate(indices):
         row = df_data.iloc[idx]
@@ -37,20 +38,19 @@ def display_posters(indices, df_data, features_data, top_n=8, mini_size=False):
         score = row.get("IMDB Score", "")
         with cols[i % 4]:
             if is_valid_url(poster):
-                st.image(poster, width=150 if not mini_size else 100, caption=title)
+                st.image(poster, width=150, caption=title)
             else:
-                st.image("https://via.placeholder.com/150x220?text=Sin+imagen", width=150 if not mini_size else 100)
-            if not mini_size:
-                st.caption(f"Géneros: {genres}")
-                st.caption(f"Año: {year} | IMDB ⭐ {score}")
-                if st.button(f"🔁 Ver similares {i}", key=f"sim_{i}_{title}"):
-                    query_vector = features_data[idx].reshape(1, -1)
-                    similarity = cosine_similarity(normalize(query_vector), normalize(features_data))[0]
-                    similar_idx = np.argsort(similarity)[::-1][1:]  # sin incluir a sí misma
-                    st.subheader(f"🎯 Películas similares a: {title}")
-                    display_posters(similar_idx, df_data, features_data, mini_size=True)
+                st.image("https://via.placeholder.com/150x220?text=Sin+imagen", width=150)
+            st.caption(f"Géneros: {genres}")
+            st.caption(f"Año: {year} | IMDB ⭐ {score}")
+            if st.button(f"🔁 Ver similares {i}", key=f"sim_{i}_{title}"):
+                query_vector = features_data[idx].reshape(1, -1)
+                similarity = cosine_similarity(normalize(query_vector), normalize(features_data))[0]
+                similar_idx = np.argsort(similarity)[-top_n:][::-1]
+                st.subheader(f"🎯 Películas similares a: {title}")
+                display_posters(similar_idx, df_data, features_data)
 
-# ========== CARGA DE DATOS ========== #
+# ========== CARGA DE DATOS ==========
 try:
     df_features = pd.read_csv("poster_features.zip")
     df_movies = pd.read_csv("movies_posters.csv")
@@ -58,6 +58,7 @@ except Exception as e:
     st.error(f"❌ Error cargando archivos CSV: {e}")
     st.stop()
 
+# Unir por tmdbId
 try:
     df = pd.merge(df_features, df_movies, on="tmdbId")
     df["year"] = df["title"].str.extract(r"\((\d{4})\)")
@@ -68,7 +69,7 @@ except Exception as e:
     st.error(f"❌ Error combinando datos: {e}")
     st.stop()
 
-# ========== INTERFAZ DE FILTRO ========== #
+# ========== INTERFAZ ==========
 st.sidebar.title("🎛️ Filtros")
 all_genres = sorted({g.strip() for sublist in df["genres_list"] for g in sublist if g})
 all_years = sorted(df["year"].dropna().unique())
@@ -79,32 +80,39 @@ selected_years = st.sidebar.multiselect("Filtrar por año", all_years)
 search_text = st.text_input("🔎 Buscar por nombre")
 uploaded_file = st.file_uploader("📤 O sube un póster", type=["jpg", "jpeg", "png"])
 
-# ========== FILTRADO MANUAL ========== #
+# ========== FILTRADO / BÚSQUEDA ==========
 filtered_df = df.copy()
+
 if selected_genres:
     filtered_df = filtered_df[filtered_df["genres_list"].apply(lambda g: any(genre in g for genre in selected_genres))]
+
 if selected_years:
     filtered_df = filtered_df[filtered_df["year"].isin(selected_years)]
+
 if search_text.strip():
     filtered_df = filtered_df[filtered_df["title"].str.lower().str.contains(search_text.strip().lower())]
 
-# ========== POR IMAGEN ========== #
+# ========== RESULTADO POR IMAGEN ==========
 if uploaded_file:
     image = Image.open(uploaded_file)
     st.image(image, caption="📌 Póster subido", width=250)
     query_vec = extract_image_features(uploaded_file)
+
     if query_vec is not None:
         if query_vec.shape[0] != features_array.shape[1]:
             st.error(f"❌ Dimensión incompatible. Imagen: {query_vec.shape[0]}, Base: {features_array.shape[1]}")
             st.stop()
+
         similarity = cosine_similarity(normalize([query_vec]), normalize(features_array))[0]
-        top_idxs = np.argsort(similarity)[::-1][:12]
+        top_idxs = np.argsort(similarity)[-8:][::-1]
         st.subheader("🎯 Recomendaciones basadas en el póster:")
         display_posters(top_idxs, df, features_array)
+
+# ========== RESULTADOS FILTRADOS / TEXTO ==========
 elif not filtered_df.empty:
     st.subheader("📋 Resultados filtrados:")
-    display_posters(filtered_df.index.tolist(), df, features_array)
+    filtered_idxs = filtered_df.index.tolist()
+    display_posters(filtered_idxs[:8], df, features_array)
 else:
     st.info("🛈 No hay resultados. Usa filtros, búsqueda o sube una imagen.")
-
 
