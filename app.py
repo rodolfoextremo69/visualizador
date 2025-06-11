@@ -4,13 +4,14 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
+import os
 
-# ========== CONFIG ==========
+# ========== CONFIG ========== #
 st.set_page_config(layout="wide")
 st.title("🎬 Buscador Visual de Películas")
 st.write("Busca por nombre, filtra por género o sube un póster para obtener recomendaciones.")
 
-# ========== FUNCIONES ==========
+# ========== FUNCIONES ========== #
 
 def extract_image_features(image_file):
     try:
@@ -24,9 +25,8 @@ def extract_image_features(image_file):
         st.error("❌ Imagen inválida.")
         return None
 
-
 def is_valid_url(url):
-    return isinstance(url, str) and url.startswith("http")
+    return isinstance(url, str) and url.startswith("http") and "placeholder" not in url
 
 def display_posters(indices, df_data, features_data, top_n=8):
     cols = st.columns(4)
@@ -38,7 +38,9 @@ def display_posters(indices, df_data, features_data, top_n=8):
         year = row.get("year", "")
         score = row.get("IMDB Score", "")
         with cols[i % 4]:
-            if is_valid_url(poster):
+            if isinstance(poster, str) and poster.startswith("http"):
+                st.image(poster, width=150, caption=title)
+            elif isinstance(poster, str) and os.path.exists(poster):
                 st.image(poster, width=150, caption=title)
             else:
                 st.image("https://via.placeholder.com/150x220?text=Sin+imagen", width=150)
@@ -51,7 +53,7 @@ def display_posters(indices, df_data, features_data, top_n=8):
                 st.subheader(f"🎯 Películas similares a: {title}")
                 display_posters(similar_idx, df_data, features_data)
 
-# ========== CARGA DE DATOS ==========
+# ========== CARGA DE DATOS ========== #
 try:
     df_features = pd.read_csv("poster_features.zip")
     df_movies = pd.read_csv("movies_posters.csv")
@@ -59,18 +61,22 @@ except Exception as e:
     st.error(f"❌ Error cargando archivos CSV: {e}")
     st.stop()
 
-# Unir por tmdbId
+# ========== COMBINACIÓN Y LIMPIEZA ========== #
 try:
     df = pd.merge(df_features, df_movies, on="tmdbId")
     df["year"] = df["title"].str.extract(r"\((\d{4})\)")
     df["genres_list"] = df["genres"].fillna("").apply(lambda x: x.split("|"))
+
+    # ✅ LIMPIEZA: eliminar filas sin poster válido
+    df = df[df["Poster"].notnull() & df["Poster"].astype(str).str.startswith(("http", "https"))]
+
     feature_cols = [col for col in df.columns if col.startswith("feat_")]
     features_array = df[feature_cols].values
 except Exception as e:
     st.error(f"❌ Error combinando datos: {e}")
     st.stop()
 
-# ========== INTERFAZ ==========
+# ========== INTERFAZ ========== #
 st.sidebar.title("🎛️ Filtros")
 all_genres = sorted({g.strip() for sublist in df["genres_list"] for g in sublist if g})
 all_years = sorted(df["year"].dropna().unique())
@@ -81,7 +87,7 @@ selected_years = st.sidebar.multiselect("Filtrar por año", all_years)
 search_text = st.text_input("🔎 Buscar por nombre")
 uploaded_file = st.file_uploader("📤 O sube un póster", type=["jpg", "jpeg", "png"])
 
-# ========== FILTRADO / BÚSQUEDA ==========
+# ========== FILTRADO / BÚSQUEDA ========== #
 filtered_df = df.copy()
 
 if selected_genres:
@@ -93,7 +99,7 @@ if selected_years:
 if search_text.strip():
     filtered_df = filtered_df[filtered_df["title"].str.lower().str.contains(search_text.strip().lower())]
 
-# ========== RESULTADO POR IMAGEN ==========
+# ========== RESULTADO POR IMAGEN ========== #
 if uploaded_file:
     image = Image.open(uploaded_file)
     st.image(image, caption="📌 Póster subido", width=250)
@@ -109,10 +115,11 @@ if uploaded_file:
         st.subheader("🎯 Recomendaciones basadas en el póster:")
         display_posters(top_idxs, df, features_array)
 
-# ========== RESULTADOS FILTRADOS / TEXTO ==========
+# ========== RESULTADOS FILTRADOS / TEXTO ========== #
 elif not filtered_df.empty:
     st.subheader("📋 Resultados filtrados:")
     filtered_idxs = filtered_df.index.tolist()
     display_posters(filtered_idxs[:8], df, features_array)
 else:
     st.info("🛈 No hay resultados. Usa filtros, búsqueda o sube una imagen.")
+
